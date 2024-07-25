@@ -31,6 +31,16 @@ const ChatRoom: React.FC = () => {
     }
   };
 
+  const checkIfFacilitator = async (chatRoomId: string) => {
+    try {
+      const response = await axios.get(`/chat_rooms/${chatRoomId}/facilitator`);
+      return response.data.id; // Adjust based on API response structure
+    } catch (error) {
+      console.error('Error checking facilitator status:', error);
+      return false;
+    }
+  }
+
   const handleSendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
     try {

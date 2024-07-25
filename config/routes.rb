@@ -5,6 +5,7 @@ Rails.application.routes.draw do
     resources :chat_rooms, only: [:index, :show, :create] do
       member do
         get :participants
+        get :facilitator
       end
       resources :messages, only: [:index, :create]
     end

@@ -4,20 +4,18 @@ import {
   Hume,
   HumeClient,
   convertBlobToBase64,
-  convertBase64ToBlob,
   ensureSingleValidAudioTrack,
   getAudioStream,
   getBrowserSupportedMimeType,
   MimeType,
 } from 'hume';
 import axios from '../services/axiosInstance';
-import { handleToolCallMessage } from '../services/handleToolCall'
+import { handleToolCallMessage } from '../services/handleToolCall';
 import { subscribeToChatRoom, unsubscribeFromChatRoom } from '../services/pusherService';
 
 const AudioChatComponent: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [client, setClient] = useState<HumeClient | null>(null);
-  // const [socket, setSocket] = useState<Hume.empathicVoice.chat.ChatSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -26,56 +24,83 @@ const AudioChatComponent: React.FC = () => {
   const [resumeChats, setResumeChats] = useState(true);
   const [chatGroupId, setChatGroupId] = useState<string | undefined>(undefined);
   const [audioQueue, setAudioQueue] = useState<string[]>([]);
+  const [callStarted, setCallStarted] = useState(false);
+  const [socket, setSocket] = useState<Hume.empathicVoice.chat.ChatSocket | null>(null);
 
   const mimeType: MimeType = (() => {
     const result = getBrowserSupportedMimeType();
     return result.success ? result.mimeType : MimeType.WEBM;
   })();
 
-  let socket: Hume.empathicVoice.chat.ChatSocket | null = null;
+  useEffect(() => {
+    const initializeConnection = async () => {
+      await connect();
+    };
+
+    initializeConnection();
+
+    return () => {
+      disconnect();
+    };
+  }, []);
 
   useEffect(() => {
-    if (audioQueue.length > 0 && !isPlaying) {
-      playAudio();
-    }
-  }, [audioQueue, isPlaying]);
-
-  const connect = async () => {
-    if (!client) {
-      const humeClient = new HumeClient({
-        apiKey: "OFMg1SxtmcuixOeof2dRUhfRGWCifWY7MfSpJ97h9txv2e2G",
-        secretKey: "d74GmHknT9UY51FM3S6IfN7JfKWrqdyMCy6yxmRdCL1DAHo2hM2tYlCI7m4hCiJc",
-      });
-      setClient(humeClient);
-    }
-
     if (client) {
-      const chatSocket = await client.empathicVoice.chat.connect({
-        configId: "c8e7beca-b683-481c-a23e-dd7b4e07a7d4",
-        resumedChatGroupId: chatGroupId,
-      });
+      const initializeChatSocket = async () => {
+        try {
+          const chatSocket = await client.empathicVoice.chat.connect({
+            configId: "c8e7beca-b683-481c-a23e-dd7b4e07a7d4",
+          });
 
-      chatSocket.on("open", handleWebSocketOpenEvent);
-      chatSocket.on("message", handleWebSocketMessageEvent);
-      chatSocket.on("error", handleWebSocketErrorEvent);
-      chatSocket.on("close", handleWebSocketCloseEvent);
+          chatSocket.on("open", handleWebSocketOpenEvent);
+          chatSocket.on("message", handleWebSocketMessageEvent);
+          chatSocket.on("error", handleWebSocketErrorEvent);
+          chatSocket.on("close", handleWebSocketCloseEvent);
 
-      socket = chatSocket;
-
-      const handleMessageReceived = (data: any) => {
-        console.log(data);
-        const { content, content_type } = data
-        if (content_type === 'audio') {
-          const audioUrl = `${content}`;
-          setAudioQueue(prevQueue => [...prevQueue, audioUrl]);
+          setSocket(chatSocket);
+          console.log('Socket initialized:', chatSocket);
+        } catch (error) {
+          console.error('Error connecting to Hume chat socket:', error);
         }
       };
 
-      subscribeToChatRoom(id, handleMessageReceived);
+      initializeChatSocket();
+    }
+  }, [client]);
+
+  useEffect(() => {
+    if (chatGroupId) {
+      subscribeToChatRoom(chatGroupId, handleMessageReceived);
+    }
+    return () => {
+      if (chatGroupId) {
+        unsubscribeFromChatRoom(chatGroupId);
+      }
+    };
+  }, [chatGroupId]);
+
+  const connect = async () => {
+    try {
+      const response = await axios.get(`/chat_rooms/${id}`);
+      const chatRoomData = response.data;
+
+      if (chatRoomData.chat_group_id) {
+        setChatGroupId(chatRoomData.chat_group_id);
+      } else {
+        if (!client) {
+          const humeClient = new HumeClient({
+            apiKey: "OFMg1SxtmcuixOeof2dRUhfRGWCifWY7MfSpJ97h9txv2e2G",
+            secretKey: "d74GmHknT9UY51FM3S6IfN7JfKWrqdyMCy6yxmRdCL1DAHo2hM2tYlCI7m4hCiJc",
+          });
+          setClient(humeClient);
+        }
+      }
+    } catch (error) {
+      console.error('Error connecting to chat room or Hume client:', error);
     }
   };
 
-  const disconnect = () => {
+  const disconnect = async () => {
     if (socket) {
       socket.close();
     }
@@ -87,7 +112,9 @@ const AudioChatComponent: React.FC = () => {
       setChatGroupId(undefined);
     }
 
-    unsubscribeFromChatRoom(id);
+    if (chatGroupId) {
+      await unsubscribeFromChatRoom(chatGroupId);
+    }
   };
 
   const captureAudio = async () => {
@@ -147,65 +174,72 @@ const AudioChatComponent: React.FC = () => {
     setAudioQueue([]);
   };
 
-  const handleWebSocketOpenEvent = async () => {
-    setConnected(true);
-    // await captureAudio();
-  };
-
-  const handleWebSocketMessageEvent = async (message: Hume.empathicVoice.SubscribeEvent) => {
-    console.log(message);
-    switch (message.type) {
-      case "chat_metadata":
-        setChatGroupId(message.chatGroupId);
-        break;
-      // append user and assistant messages to UI for chat visibility
-      case "user_message":
-      case "assistant_message":
-        const { role, content } = message.message;
-        const topThreeEmotions = extractTopThreeEmotions(message);
-        appendMessage(role, content ?? "", topThreeEmotions);
-        break;
-      case "audio_output":
-        const audioOutput = message.data;
-        await sendAudioMessage(audioOutput);
-        break;
-      case "user_interruption":
-        stopAudio();
-        break;
-      case "tool_call":
-      	console.log(socket);
-        handleToolCallMessage(message, socket, id);
-        break;
-      case "tool_response":
-      	console.log(message.content);
-      	break;
+  const sendResumeAssistantMessage = async () => {
+    try {
+    	socket.url
+      const message = {
+        resumed_chat_group_id: chatGroupId, // Add any relevant content here if needed
+      };
+      if (socket) {
+        console.log('Sending resume assistant message:', socket);
+        socket.sendSessionSettings(message);
+      } else {
+        console.error('Socket is null. Cannot send resume assistant message.');
+      }
+    } catch (error) {
+      console.error('Error sending resume_assistant_message:', error);
     }
   };
 
-  const sendAudioMessage = async (base64Audio: string) => {
-    try {
-      const response = await axios.post(`/chat_rooms/${id}/messages`, {
-        content: base64Audio,
-        user_id: 1, // Replace with actual user id
-        chat_room_id: id, // Replace with actual chat room id
-        content_type: 'audio',
-      });
+  const handleWebSocketOpenEvent = async () => {
+    setConnected(true);
+    console.log('WebSocket connection opened.');
+    // Optionally, start capturing audio here if needed
+    // await captureAudio();
+  };
 
-      if (response.status === 201) {
-        console.log(response.data);
+  const handleMessageReceived = (data: any) => {
+    console.log('Message received:', data);
+    const { content, content_type } = data;
+    if (content_type === 'audio') {
+      const audioUrl = `${content}`;
+      setAudioQueue(prevQueue => [...prevQueue, audioUrl]);
+    }
+  };
+
+  const handleWebSocketMessageEvent = async (message: Hume.empathicVoice.SubscribeEvent) => {
+    console.log('WebSocket message event:', message);
+
+    if (callStarted) {
+      switch (message.type) {
+        case "audio_output":
+          const audioOutput = message.data as Hume.empathicVoice.AudioOutput;
+          const audioUrl = audioOutput.data;
+          setAudioQueue(prevQueue => [...prevQueue, audioUrl]);
+          playAudio();
+          break;
+        case "user_message":
+        case "assistant_message":
+          const chatMessage = message.data as Hume.empathicVoice.UserMessage | Hume.empathicVoice.AssistantMessage;
+          const topThreeEmotions = extractTopThreeEmotions(chatMessage);
+          appendMessage(chatMessage.role, chatMessage.content, topThreeEmotions);
+          break;
+        default:
+          console.log('Unhandled message type:', message.type);
+          break;
       }
-    } catch (error) {
-      console.error('Error sending audio message', error);
+    } else {
+    	setChatGroupId(message.chatGroupId);
     }
   };
 
   const handleWebSocketErrorEvent = (error: Error) => {
-    console.error(error);
+    console.error('WebSocket error:', error);
   };
 
   const handleWebSocketCloseEvent = async () => {
     if (connected) await connect();
-    console.log("Web socket connection closed");
+    console.log('WebSocket connection closed');
   };
 
   const appendMessage = (role: Hume.empathicVoice.Role, content: string, topThreeEmotions: { emotion: string; score: any }[]) => {
@@ -231,11 +265,25 @@ const AudioChatComponent: React.FC = () => {
     return topThreeEmotions;
   };
 
+  const handleStartCall = async () => {
+    console.log('Starting call with socket:', socket);
+    if (chatGroupId) {
+      const newChatSocket = await client.empathicVoice.chat.connect({
+	      configId: "c8e7beca-b683-481c-a23e-dd7b4e07a7d4",
+	      resumed_chat_group_id: chatGroupId
+	    });
+      setSocket(newChatSocket);
+      setCallStarted(true);
+    } else {
+      console.error('Socket is null when starting call.');
+    }
+  };
+
   return (
     <div id="app">
       <div id="btn-container">
-        <button id="start-btn" onClick={connect}>Start</button>
-        <button id="stop-btn" onClick={disconnect} disabled={!connected}>Stop</button>
+        <button id="start-btn" onClick={handleStartCall} disabled={!connected}>Start</button>
+        <button id="stop-btn" onClick={stopAudio} disabled={!connected}>Stop</button>
       </div>
       <div id="heading-container">
         <h2>Empathic Voice Interface (EVI)</h2>
