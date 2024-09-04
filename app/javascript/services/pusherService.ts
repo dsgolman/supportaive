@@ -19,19 +19,14 @@ const initializePusher = async () => {
   return pusher;
 };
 
-const pusherInstance = await initializePusher();
-
-export const subscribeToChatRoom = (chatRoomId: string, callback: (data: any) => void) => {
-  const channel = pusherInstance.subscribe(`chat-room-${chatRoomId}`);
-  channel.bind('audio-message', callback);
+export const subscribeToChatRoom = async (chatRoomId: string, callback: (data: any) => void) => {
+  const pusherInstance = await initializePusher();
+  const channel = pusherInstance.subscribe(`chat_room_${chatRoomId}`);
+  channel.bind('new_message', callback);
+  // channel.bind('audio_message', callback);  // Bind to audio message events
 };
 
-export const unsubscribeFromChatRoom = (chatRoomId: string) => {
-  pusherInstance.unsubscribe(`chat-room-${chatRoomId}`);
+export const unsubscribeFromChatRoom = async (chatRoomId: string) => {
+  const pusherInstance = await initializePusher();
+  pusherInstance.unsubscribe(`chat_room_${chatRoomId}`);
 };
-
-export const sendMessageToChatRoom = async (chatRoomId: string, message: string) => {
-  await axios.post(`/chat-rooms/${chatRoomId}/messages`, { content: message, content_type: 'audio' });
-};
-
-

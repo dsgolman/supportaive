@@ -28,6 +28,12 @@ class Api::ChatRoomsController < ApplicationController
     render json: { participants: participants }
   end
 
+  def moderator
+    chat_room = ChatRoom.find(params[:id])
+    moderator = chat_room.users.first.id
+    render json: {moderator: moderator}
+  end
+
   protected
 
   def json_request?

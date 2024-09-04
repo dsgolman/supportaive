@@ -14,6 +14,8 @@ module Supportaive
     Dotenv::Rails
     # Configuration for the application, engines, and railties goes here.
     #
+
+    config.hosts << "d1d9-108-28-91-136.ngrok-free.app"
     # These settings can be overridden in specific environments using the files
     # in config/environments, which are processed later.
     #

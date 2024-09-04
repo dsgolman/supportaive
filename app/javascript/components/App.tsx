@@ -4,6 +4,7 @@ import ChatRoomList from './ChatRoomList';
 import ChatRoom from './ChatRoom';
 import CreateChatRoom from './CreateChatRoom';
 import AudioChatComponent from './AudioChatComponent';
+import ChatRoomContainer from './ChatRoomContainer';
 
 const App: React.FC = () => {
   return (
@@ -11,7 +12,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<ChatRoomList />} />
         <Route path="/chat_rooms/:id/audio" element={<AudioChatComponent />} />
-        <Route path="/chat_rooms/:id" element={<ChatRoom />} />
+        <Route path="/chat_rooms/:id" element={<ChatRoomContainer />} />
         <Route path="/create_chat_room" element={<CreateChatRoom />} />
       </Routes>
     </Router>

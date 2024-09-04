@@ -33,6 +33,7 @@ class Api::MessagesController < ApplicationController
 
   def handle_text_message(message)
     Pusher.trigger("chat_room_#{message.chat_room_id}", 'new_message', {
+      id: message.id,
       content: message.content,
       user_id: message.user_id,
       chat_room_id: message.chat_room_id,
